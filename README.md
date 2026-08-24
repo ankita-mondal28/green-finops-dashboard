@@ -147,3 +147,17 @@ keeping the shipped application at zero ongoing cost.
 
 Python · Pandas · NumPy · Streamlit · Plotly · pytest — all free and
 open-source, no paid APIs anywhere in the runtime path.
+
+## 10. Screenshots
+
+**Dashboard overview — KPI cards, top waste sources, and regional breakdown**
+![Dashboard overview](screenshots/dashboard-overview.png)
+
+**Fleet CPU utilization (idle vs healthy) and actionable recommendations feed**
+![CPU scatter and recommendations](screenshots/dashboard-cpu-scatter-recommendations.png)
+
+**Recommendations feed and detection accuracy panel**
+![Recommendations and accuracy](screenshots/dashboard-recommendations-accuracy.png)
+
+**Test suite — all 6 tests passing, including detection accuracy validation**
+![Test suite passing](screenshots/test-suite-passing.png)
