@@ -64,10 +64,22 @@ def detect_idle_instances(
 
     merged = inventory_df.merge(stats, on="instance_id", how="left")
 
-    merged["is_flagged_idle"] = (
+    # Edge case caught during IBM Bob review: a left merge means an instance
+    # with ZERO rows in util_df gets NaN for mean_cpu_pct/idle_hour_fraction.
+    # `NaN < threshold` silently evaluates to False, so a completely dark
+    # instance (no telemetry ever reported) was passing as "healthy" — the
+    # opposite of correct, since a totally unreported instance is more
+    # suspicious than a reported-but-idle one, not less. We flag it
+    # explicitly instead of letting it fall through.
+    merged["has_telemetry"] = merged["observed_hours"].notna()
+
+    merged["is_flagged_idle"] = merged["has_telemetry"] & (
         (merged["mean_cpu_pct"] < mean_threshold)
         & (merged["idle_hour_fraction"] >= consistency_threshold)
     )
+    # No-telemetry instances are flagged on their own, separately from the
+    # normal idle path, so the reason is traceable in the evidence columns.
+    merged.loc[~merged["has_telemetry"], "is_flagged_idle"] = True
 
     return merged
 
@@ -78,8 +90,30 @@ def detect_stale_storage(
 ) -> pd.DataFrame:
     """Returns storage_df enriched with an `is_flagged_stale` boolean column."""
     out = storage_df.copy()
-    out["is_flagged_stale"] = out["last_accessed_days_ago"] > days_threshold
+    # Edge case caught during IBM Bob review: using strict `>` meant a bucket
+    # unaccessed for EXACTLY the threshold (e.g. precisely 90 days) was not
+    # flagged, which is inconsistent with how "90-day inactivity policy" is
+    # normally read (inclusive of the boundary day).
+    out["is_flagged_stale"] = out["last_accessed_days_ago"] >= days_threshold
     return out
+
+
+def _to_bool_series(series: pd.Series) -> pd.Series:
+    """
+    Robustly coerces a column to boolean regardless of how it arrived —
+    native bool, 0/1 ints, or "True"/"False" strings (e.g. from a CSV
+    round-trip). Hardening added after IBM Bob review flagged that a naive
+    `.astype(bool)` on a string column would treat every non-empty string
+    (including the literal text "False") as True. Verified this wasn't
+    actually happening in our pipeline (pandas' CSV parser already infers
+    True/False literals as native bool), but this closes the risk
+    permanently regardless of future pandas versions or data sources.
+    """
+    if series.dtype == bool:
+        return series
+    if series.dtype == object:
+        return series.astype(str).str.strip().str.lower().map({"true": True, "false": False})
+    return series.astype(bool)
 
 
 def validate_detection_accuracy(
@@ -94,8 +128,8 @@ def validate_detection_accuracy(
     telemetry there is no ground truth, so this function exists purely to
     validate the detection logic itself during development.
     """
-    y_true = flagged_df[ground_truth_col].astype(bool)
-    y_pred = flagged_df[predicted_col].astype(bool)
+    y_true = _to_bool_series(flagged_df[ground_truth_col])
+    y_pred = _to_bool_series(flagged_df[predicted_col])
 
     tp = int(((y_true) & (y_pred)).sum())
     fp = int((~y_true & y_pred).sum())

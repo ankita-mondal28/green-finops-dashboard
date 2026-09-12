@@ -129,12 +129,40 @@ not live-fetched from a billing API.
 
 ## 7. Role of IBM Bob in this Project
 
-Per program requirements, IBM Bob was incorporated during the
-**development/ideation stage** of this project — used to review module
-structure and assist with test-case generation during the build. IBM Bob
-is a freemium enterprise AI SDLC agent (free tier / trial credits), so it
-was used only as a development-time aid, not as a runtime dependency —
-keeping the shipped application at zero ongoing cost.
+Per program requirements, **IBM Bob (Bob Shell)** was used during the
+**development stage** of this project for a genuine code review task:
+
+> *"Review `@src/core/waste_detector.py` for edge cases I might be missing
+> in the idle-instance and stale-storage detection logic."*
+
+Bob Shell read the actual source files and returned 10 ranked findings.
+Two were substantive enough to act on and were fixed directly in the code:
+
+1. **(High) Zero-telemetry instances silently passed as "healthy."**
+   Because of a left-merge, an instance with zero rows of utilization data
+   got `NaN` for its stats, and `NaN < threshold` evaluates to `False` —
+   so a completely unreported instance was never flagged, when it should
+   be the *most* suspicious case, not the least. Fixed: such instances are
+   now explicitly flagged (`has_telemetry` column added for traceability).
+2. **(Medium) Off-by-one on the stale-storage boundary.** The comparison
+   used `>` instead of `>=`, so a bucket unaccessed for *exactly* 90 days
+   slipped through the 90-day policy. Fixed to `>=`.
+
+A third finding (risk of `.astype(bool)` misreading `"True"`/`"False"`
+strings after a CSV round-trip) was checked against this project's actual
+data and confirmed to **not** be occurring — but the code was hardened
+with an explicit `_to_bool_series()` coercion helper regardless, since the
+risk is real in general even if not currently triggered here.
+
+The remaining findings (missing minimum-observation-window guard, unused
+`p95_cpu_pct` in the flag condition, missing dtype/column-existence
+guards) were reviewed and documented in code comments as known,
+lower-priority hardening opportunities rather than fixed immediately, to
+avoid changing detector behavior without a corresponding test update.
+
+IBM Bob is a freemium enterprise AI SDLC agent (free tier / trial
+credits), so it was used only as a development-time aid, not as a runtime
+dependency — keeping the shipped application at zero ongoing cost.
 
 ## 8. Sample Output (from the included synthetic dataset)
 
@@ -147,17 +175,3 @@ keeping the shipped application at zero ongoing cost.
 
 Python · Pandas · NumPy · Streamlit · Plotly · pytest — all free and
 open-source, no paid APIs anywhere in the runtime path.
-
-## 10. Screenshots
-
-**Dashboard overview — KPI cards, top waste sources, and regional breakdown**
-![Dashboard overview](screenshots/dashboard-overview.png)
-
-**Fleet CPU utilization (idle vs healthy) and actionable recommendations feed**
-![CPU scatter and recommendations](screenshots/dashboard-cpu-scatter-recommendations.png)
-
-**Recommendations feed and detection accuracy panel**
-![Recommendations and accuracy](screenshots/dashboard-recommendations-accuracy.png)
-
-**Test suite — all 6 tests passing, including detection accuracy validation**
-![Test suite passing](screenshots/test-suite-passing.png)
